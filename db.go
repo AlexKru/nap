@@ -14,6 +14,7 @@ import (
 type DB struct {
 	pdbs  []*sql.DB // Physical databases
 	count uint64    // Monotonically incrementing counter on each query
+	cSlave int	// current slave server
 }
 
 // Open concurrently opens each underlying physical db.
@@ -21,7 +22,7 @@ type DB struct {
 // one being used as the master and the rest as slaves.
 func Open(driverName, dataSourceNames string) (*DB, error) {
 	conns := strings.Split(dataSourceNames, ";")
-	db := &DB{pdbs: make([]*sql.DB, len(conns))}
+	db := &DB{pdbs: make([]*sql.DB, len(conns)), cSlave: 1}
 
 	err := scatter(len(db.pdbs), func(i int) (err error) {
 		db.pdbs[i], err = sql.Open(driverName, conns[i])
@@ -145,5 +146,14 @@ func (db *DB) slave(n int) int {
 	if n <= 1 {
 		return 0
 	}
+
+	if db.cSlave == len(db.pdbs) - 1 {
+		db.cSlave = 1
+	} else {
+		db.cSlave++
+	}
+
+	return db.cSlave
+
 	return int(1 + (atomic.AddUint64(&db.count, 1) % uint64(n-1)))
 }
